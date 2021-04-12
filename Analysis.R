@@ -1,6 +1,6 @@
 # BINF 531 - Statistical Bioinformatics
 # McGill University
-# Final Project - Source Code
+# Final Project - Analysis Code
 # Michael Shamash, Wen Da Lu, Garrie Peng
 
 library(plyr)
@@ -206,3 +206,119 @@ rownames(temp) # Obtain the OTU names
 
 # Random Forests Section - Garrie ---------------------------------------------
 library(randomForest)
+library(knitr)
+library(pROC)
+library(kableExtra)
+
+taxa_names(ps.filt) <- paste("OTU", 1:664, sep="_")
+taxa_names(ps.filt)
+
+# Random forest classifier for genotype
+response.geno <- as.factor(sample_data(ps.filt)$Genotype)
+predictors <- t(otu_table(ps.filt))
+
+rf.data.geno <- data.frame(response.geno, predictors)
+set.seed(2)
+ps.classify.geno <- randomForest(response.geno ~ ., data = rf.data.geno, ntree = 100)
+print(ps.classify.geno)
+plot(ps.classify.geno)
+
+roc.geno <- roc(rf.data.geno$response.geno, ps.classify.geno$votes[, 2], levels = c("WT", "KO"))
+plot(roc.geno)
+auc(roc.geno)
+
+imp.geno <- importance(ps.classify.geno)
+imp.geno <- data.frame(predictors = rownames(imp.geno), imp.geno)
+
+imp.sort.geno <- arrange(imp.geno, desc(MeanDecreaseGini))
+imp.sort.geno$predictors <- factor(imp.sort.geno$predictors, levels = imp.sort.geno$predictors)
+imp.20.geno <- imp.sort.geno[1:20, ]
+
+ggplot(imp.20.geno, aes(x = predictors, y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "red") +
+  coord_flip() +
+  ggtitle("Most important OTUs for classifying samples\n based on Genotype") +
+  xlab("OTU ID") +  
+  theme(plot.title = element_text(hjust = 0.5), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  geom_text(x=10, y=0.4, label="56.67%")
+
+otunames.geno <- imp.20.geno$predictors
+r.geno <- rownames(tax_table(ps.filt)) %in% otunames.geno
+imp.otu.g <- tax_table(ps.filt)[r.geno, ] %>% 
+  kbl(caption = "") %>% 
+  kable_styling()
+save_kable(
+  imp.otu.g,
+  "kable.geno.png",
+  bs_theme = "simplex",
+  self_contained = TRUE,
+  extra_dependencies = NULL,
+  latex_header_includes = NULL,
+  keep_tex = FALSE,
+  density = 300
+)
+dev.off()
+
+# Random forest classifier for age
+response.age <- as.factor(sample_data(ps.filt)$Age)
+predictors <- t(otu_table(ps.filt))
+
+rf.data.age <- data.frame(response.age, predictors)
+set.seed(2)
+ps.classify.age <- randomForest(response.age ~ ., data = rf.data.age, ntree = 100)
+print(ps.classify.age)
+
+roc.age <- roc(rf.data.age$response.age, ps.classify.age$votes[, 2])
+plot(roc.age)
+auc(roc.age)
+
+imp.age <- importance(ps.classify.age)
+imp.age <- data.frame(predictors = rownames(imp.age), imp.age)
+
+imp.sort.age <- arrange(imp.age, desc(MeanDecreaseGini))
+imp.sort.age$predictors <- factor(imp.sort.age$predictors, levels = imp.sort.age$predictors)
+imp.20.age <- imp.sort.age[1:20, ]
+
+ggplot(imp.20.age, aes(x = predictors, y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  coord_flip() +
+  ggtitle("Most important OTUs for classifying samples\n based on Age") +
+  xlab("OTU ID") +  
+  theme(plot.title = element_text(hjust = 0.5), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  geom_text(x=10, y=0.4, label="23.33%")
+
+otunames.age <- imp.20.age$predictors
+r.age <- rownames(tax_table(ps.filt)) %in% otunames.age
+imp.otu.age <- tax_table(ps.filt)[r.age, ] %>% 
+  kbl(caption = "") %>% 
+  kable_styling()
+save_kable(
+  imp.otu.age,
+  "kable.age.png",
+  bs_theme = "simplex",
+  self_contained = TRUE,
+  extra_dependencies = NULL,
+  latex_header_includes = NULL,
+  keep_tex = FALSE,
+  density = 300
+)
+dev.off()
+
+# Generate ROC for RF classifiers of genotype and age, calculate AUC-ROC
+png("roc_curve.png", width = 1000,
+    height = 1000,
+    units = "px",
+    pointsize = 25, bg = "white", res = NA)
+par(mar = c(5.1, 5.1, 4.1, 3.1))
+plot(roc.geno, col = "red", 
+     xlab = "Specificity (False positive rate)",
+     ylab = "Sensitivity (True positive rate)", 
+     main = "ROC Curves of Random Forest Models Classifying Samples\n Based on Genotype and Age")
+lines(roc.age, col = "blue")
+legend("bottomright", legend = c("Genotype", "Age"),
+       col = c("red", "blue"), pch = 1)
+text(0.3, 0.77, paste("AUC:", formatC(auc(roc.geno))), col = "red", cex = 1)
+text(0.3, 0.87, paste("AUC:", formatC(auc(roc.age))), col = "blue", cex = 1)
+dev.off()
