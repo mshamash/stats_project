@@ -1,17 +1,17 @@
 # BINF 531 - Statistical Bioinformatics
 # McGill University
 # Final Project - Source Code
-# Michael Shamash
+# Michael Shamash, Wen Da Lu, Garrie Peng
 
+library(plyr)
 library(tidyverse)
 library(phyloseq)
-library(ape)
 library(vegan)
-library(plyr)
 
-set.seed(1)
+# Diversity Analysis Section - Michael ----------------------------------------
+source("HelperFunctions.R")
 
-#Import feature table, taxonomy table, and metadata table
+# Import feature table, taxonomy table, and metadata table
 features <- read.csv("features.tsv", header = T, row.names = 1, as.is = T, sep = "\t", skip = 1)
 taxonomy <- read.csv("taxonomy.tsv", header = T, row.names = 1, as.is = T, sep = "\t")
 metadata <- read.csv("metadata.csv", header = T, row.names = 1, as.is = T)
@@ -27,7 +27,7 @@ for (i in 1:nrow(taxonomy)) for (j in 1:7) taxonomy.mat[i, j] <- substring(unlis
 OTU <- otu_table(features, taxa_are_rows = T)
 TAX <- tax_table(taxonomy.mat)
 DATA <- sample_data(metadata)
-ps <- merge_phyloseq(OTU, TAX, DATA)
+ps <- merge_phyloseq(OTU, TAX, DATA)#, TREE)
 
 # Filter out contaminating mitochondria and chloroplasts, remove negative controls
 ps.filt <- ps %>% subset_taxa(
@@ -37,10 +37,6 @@ ps.filt <- ps %>% subset_taxa(
 ) %>% subset_samples(
   Genotype != "negative"
 )
-
-# Create phylogenetic tree and attach to phyloseq object
-TREE <- rtree(ntaxa(ps.filt), rooted = T, tip.label = taxa_names(ps.filt))
-ps.filt <- merge_phyloseq(ps.filt, TREE)
 
 # Plot basic rarefaction curve
 rarecurve(t(otu_table(ps.filt)), step = 50, ylab = "Richness (# of OTUs)", xlab = "# of reads", label = F)
@@ -58,19 +54,12 @@ dat[dat$Genus %in% other, ]$Genus <- "Other" # Change their name to "Other"
 dat$Age <- factor(dat$Age, levels = c("week6", "week12"))
 dat$Genotype <- factor(dat$Genotype, levels = c("WT", "KO"))
 
-# Boxplot of phyla-level relative abundances, need to change code above to Phyla instead of Genus to use this
-#phyla <- c("Actinobacteria", "Bacteroidetes", "Firmicutes", "Proteobacteria", "Other")
-#ggplot(dat, aes(fill = factor(Phylum, levels = phyla), x = Sample, y = Abundance)) +
-#  geom_bar(stat = "identity", position = "fill") +
-#  scale_fill_brewer(palette = "Set3", name = "Phylum") +
-#  theme(axis.text.x = element_blank()) +
-#  facet_grid(. ~ Age + Genotype, scales = "free", space="free")
-
 # Boxplot of genus-level relative abundances
 genera <- c("Acetobacter", "Allobaculum", "Bacteroides", "Campylobacter", "Propionibacterium", "Ruminococcus", "Staphylococcus", "Streptococcus", "Other")
-ggplot(dat, aes(fill = factor(taxon, levels = genera), x = Sample, y = Abundance)) +
+#phyla <- c("Actinobacteria", "Bacteroidetes", "Firmicutes", "Proteobacteria", "Other")
+ggplot(dat, aes(fill = factor(Genus, levels = genera), x = Sample, y = Abundance)) +
   geom_bar(stat = "identity", position = "fill") +
-  scale_fill_brewer(palette = "Set3", name = taxon) +
+  scale_fill_brewer(palette = "Set3", name = "Genus") +
   theme_bw()+
   theme(axis.text.x = element_blank()) +
   facet_grid(. ~ Age + Genotype, scales = "free", space="free")
@@ -94,107 +83,126 @@ ggplot(samp.div, aes(fill = Genotype, x = Genotype, y = Shannon)) + geom_boxplot
 
 # Statistical testing of alpha diversity metrics between groups
 # Richness stats
-t.test(subset(samp.div, Age == "week12" & Genotype == "WT")$Observed, subset(samp.div, Age == "week12" & Genotype == "KO")$Observed)
 t.test(subset(samp.div, Age == "week6" & Genotype == "WT")$Observed, subset(samp.div, Age == "week6" & Genotype == "KO")$Observed)
+t.test(subset(samp.div, Age == "week12" & Genotype == "WT")$Observed, subset(samp.div, Age == "week12" & Genotype == "KO")$Observed)
 
 # Shannon stats
 Hutcheson_t_test(subset(samp.div, Age == "week6" & Genotype == "WT")$Shannon, subset(samp.div, Age == "week6" & Genotype == "KO")$Shannon)
 Hutcheson_t_test(subset(samp.div, Age == "week12" & Genotype == "WT")$Shannon, subset(samp.div, Age == "week12" & Genotype == "KO")$Shannon)
 
 # Calculate weighted UniFrac distances between samples and plot on PCoA
-ps.bdiv <- ordinate(ps.filt, "PCoA", "wunifrac")
+ps.bdiv <- ordinate(ps.filt, "PCoA", "bray")
 plot_ordination(ps.filt, ps.bdiv, type = "samples", color = "Genotype", shape = "Age") +
   geom_point(size = 4) +
   scale_colour_brewer(palette = "Set1") +
   stat_ellipse(geom = "polygon", type = "norm", alpha = 0.15, aes(fill = Genotype)) +
   theme_bw() +
-  ggtitle("PCoA on weighted UniFrac distances of all samples")
+  ggtitle("PCoA on Bray Curtis distances of all samples")
 
 # Statistical testing (PERMANOVA) of beta diversity between groups
-adonis(distance(ps.filt, method = "wunifrac") ~ Age, data = data.frame(sample_data(ps.filt)))
-adonis(distance(ps.filt, method = "wunifrac") ~ Genotype, data = data.frame(sample_data(ps.filt)))
-adonis(distance(ps.filt, method = "wunifrac") ~ Cage, data = data.frame(sample_data(ps.filt)))
+set.seed(123456)
+adonis(distance(ps.filt, method = "bray") ~ Genotype, data = data.frame(sample_data(ps.filt)))
+adonis(distance(ps.filt, method = "bray") ~ Age, data = data.frame(sample_data(ps.filt)))
+adonis(distance(ps.filt, method = "bray") ~ Cage, data = data.frame(sample_data(ps.filt)))
 
 
-# OTHER CODE GOES HERE
+# Correlation & Permutation Test Section - Wen Da -----------------------------
+library(reshape2)
 
-
-# Custom function for Hutcheson t-test, derived from ecolTest package
-Hutcheson_t_test <- function(x, y, shannon.base = exp(1),
-                             alternative = "two.sided",
-                             difference = 0) {
-  dname <-paste ((deparse(substitute(x))), ", ", (deparse(substitute(y))))
-  x <- drop(as.matrix(x))
-  y <- drop(as.matrix(y))
-  if (!is.numeric(x) | !is.numeric(y)) {
-    stop("x and y must be numeric")
-  }
-  if (any(c(x,y) < 0, na.rm = TRUE)) {
-    stop("x and y must be non-negative")
-  }
-  if (any(c(length(x) < 2, length(y) < 2))) {
-    stop("x and y must contain at least two elements")
-  }
-  if (any(c(sum(x, na.rm = TRUE) < 3, sum(y, na.rm = TRUE) < 3))) {
-    stop("x and y abundance must be at least two")
-  }
-  if (!requireNamespace("stats", quietly = TRUE)) {
-    stop('Package "stats" is needed')
+# Generate Pearson correlation heatmap
+corr.plot <- function(features) {
+  cormat <- abs(round(cor(features), 2))
+  
+  get_lower_tri <- function(cormat) {
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
   }
   
-  if (any(is.na(c(x, y)))) {
-    x[is.na(x)] <- 0
-    y[is.na(y)] <- 0
-    warning("missing values in x and y replaced with zeroes")
-  }
+  upper_tri <- get_lower_tri(cormat)
   
-  alternative <- char.expand(alternative, c("two.sided",
-                                            "less", "greater", "auto"))
-  if (length(alternative) > 1L || is.na(alternative)) {
-    stop("alternative must be \"two.sided\", \"less\" or \"greater\"")
-  }
-  length_diff <- length(x)-length(y)
-  if (length_diff > 0){
-    y <- c(y, rep(0, length_diff))
-  }
-  else if(length_diff < 0){
-    x <- c(x, rep(0, abs(length_diff)))
-  }
-  xy <- matrix(c(x, y), ncol=2)
-  N <- colSums(xy)
-  H <- (N*log(N, shannon.base)-colSums(xy*log(xy, shannon.base),
-                                       na.rm = TRUE))/N
-  S<-(colSums(xy*log(xy, shannon.base)**2, na.rm = TRUE) -
-        ((colSums(xy*log(xy, shannon.base), na.rm = TRUE)**2)/N))/(N**2)
-  Hutchesontstat <- (diff(H[c(2, 1)])-difference)/sqrt(sum(S))
-  df <- (sum(S)**2)/(sum(S**2/N))
-  estimate_dif <- diff(H[c(2,1)])
-  if (alternative == "auto") {
-    alternative <- if (estimate_dif < 0) {
-      "less"
-    }else{
-      "greater"
-    }
-  }
+  melted_cormat <- melt(upper_tri, na.rm = TRUE)
   
-  if (alternative == "less") {
-    pval <- pt(Hutchesontstat, df)
-  }
-  else if (alternative == "greater") {
-    pval <- pt(Hutchesontstat, df, lower.tail = FALSE)
-  }
-  else {
-    pval <- 2 * pt(-abs(Hutchesontstat), df)
-  }
-  names(Hutchesontstat) <- "Hutcheson t-statistic"
-  names(df) <- "df"
-  names(H) <- c("x", "y")
-  mu <- difference
-  names(mu) <- "difference in H'"
-  rval <- list(statistic = Hutchesontstat, parameter = df, p.value = pval,
-               estimate = H, null.value = mu,
-               method="Hutcheson t-test for two communities",
-               alternative = alternative, data.name=dname)
-  class(rval) <- "htest"
-  return(rval)
+  return(ggplot(data = melted_cormat, aes(Var2, Var1, fill = value)) +
+           geom_tile(color = "white") +
+           scale_fill_gradient2(low = "blue", high = "red", mid = "green", 
+                                midpoint = 0.5, limit = c(0, 1), space = "Lab", 
+                                name ="Pearson\nCorrelation") +
+           theme_minimal() +
+           theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                            size = 10, hjust = 1)) +
+           coord_fixed())
 }
+corr.plot(features)
+
+# Perform permutation tests
+data1 <- features[, 1:5]
+data2 <- features[, 6:15]
+data3 <- features[, 16:20]
+data4 <- features[, 21:30]
+data5 <- features[, 1:15]
+data6 <- features[, 16:30]
+
+perm <- function(x,y) {
+  t.res <- rep(0, length(x[, 1]))
+  
+  P <- length(x[, 1])
+  
+  for (i in 1:P) {
+    test.stat <- abs(sum(x[i, ])/length(x) - sum(y[i, ])/length(y)) # Get mean difference
+    
+    permut <- 1000 # Permute 1000 times
+    vari <- cbind(x[i, ], y[i, ]) # All total variables
+    
+    PermSamples <- matrix(0, nrow = length(x) + length(y), ncol = permut) #sample storing
+    Perm.test.stat <- rep(0, permut) #mean storing
+    
+    for(j in 1:permut) {
+      temp <- sample(vari, 
+                     size = length(x) + length(y), 
+                     replace = FALSE)
+      
+      names(temp) <- NULL
+      
+      PermSamples[, j] <- t(temp) 
+      
+      Perm.test.stat[j] <- abs(sum(PermSamples[1:length(x), j])/length(x) 
+                               - sum(PermSamples[(length(x)+1):(length(x) + length(y)), j])/length(y))
+    }
+    
+    p.val <- mean(Perm.test.stat >= test.stat)
+    
+    t.res[i] <- p.val
+  }
+  return(t.res)
+}
+
+comp.data1.data2 <- perm(data1, data2)
+comp.data1.data3 <- perm(data1, data3)
+comp.data2.data4 <- perm(data2, data4)
+comp.data3.data4 <- perm(data3, data4)
+comp.data5.data6 <- perm(data5, data6)
+
+a <- comp.data1.data2 <= 0.05
+b <- comp.data1.data3 <= 0.05
+c <- comp.data2.data4 <= 0.05
+d <- comp.data3.data4 <= 0.05
+
+sig <- rowSums(cbind(a, b, c, d))
+
+e <- as.data.frame(comp.data5.data6 <= 0.05)
+colnames(e) <- "sig"
+
+temp <- cbind(features, e)
+temp <- subset(temp, sig == TRUE) 
+temp <- subset(temp, select = -sig)
+
+barplot(sig, ylab = "Number of Significant Match", xlab = "OTU Number",
+        main = "Number of Significant Match between the Four Groups Depending on the OTU")
+
+corr.plot(temp) # Correlation heatmap of the new matrix
+
+rownames(temp) # Obtain the OTU names
+
+
+# Random Forests Section - Garrie ---------------------------------------------
+library(randomForest)
