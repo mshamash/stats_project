@@ -235,10 +235,10 @@ adonis(distance(ps.filt.12wk, method = "bray") ~ Cage, data = data.frame(sample_
 library(reshape2)
 
 # Generate Pearson correlation heatmap
-corr.plot <- function(features) {
+corr.plot <- function(features){
   cormat <- abs(round(cor(features), 2))
   
-  get_lower_tri <- function(cormat) {
+  get_lower_tri <- function(cormat){
     cormat[upper.tri(cormat)] <- NA
     return(cormat)
   }
@@ -251,13 +251,13 @@ corr.plot <- function(features) {
            geom_tile(color = "white") +
            scale_fill_gradient2(low = "blue", high = "red", mid = "green", 
                                 midpoint = 0.5, limit = c(0, 1), space = "Lab", 
-                                name ="Pearson\nCorrelation") +
-           theme_minimal() +
+                                name="Pearson\nCorrelation") +
+           theme_minimal()+  
            theme(axis.text.x = element_text(angle = 45, vjust = 1, 
                                             size = 10, hjust = 1)) +
            coord_fixed())
 }
-corr.plot(features)
+corr.plot(t(features))
 
 # Perform permutation tests
 data1 <- features[, 1:5]
@@ -266,22 +266,26 @@ data3 <- features[, 16:20]
 data4 <- features[, 21:30]
 data5 <- features[, 1:15]
 data6 <- features[, 16:30]
+data7 <- features[, c(1:5, 16:20)]
+data8 <- features[, c(6:15, 21:30)]
 
-perm <- function(x,y) {
-  t.res <- rep(0, length(x[, 1]))
+perm <- function(x,y){
+  t.res = rep(0, length(x[, 1]))
   
-  P <- length(x[, 1])
+  P = length(x[, 1])
   
-  for (i in 1:P) {
-    test.stat <- abs(sum(x[i, ])/length(x) - sum(y[i, ])/length(y)) # Get mean difference
+  for (i in 1:P)
+  {
+    test.stat <- abs(sum(x[i, ])/length(x) - sum(y[i, ])/length(y)) #get mean difference
     
-    permut <- 1000 # Permute 1000 times
-    vari <- cbind(x[i, ], y[i, ]) # All total variables
+    permut = 1000 #permut 1000 times
+    vari = cbind(x[i, ], y[i, ]) #all total variables
     
     PermSamples <- matrix(0, nrow = length(x) + length(y), ncol = permut) #sample storing
     Perm.test.stat <- rep(0, permut) #mean storing
     
-    for(j in 1:permut) {
+    for(j in 1:permut)
+    {
       temp <- sample(vari, 
                      size = length(x) + length(y), 
                      replace = FALSE)
@@ -297,37 +301,61 @@ perm <- function(x,y) {
     p.val <- mean(Perm.test.stat >= test.stat)
     
     t.res[i] <- p.val
+    
   }
   return(t.res)
 }
 
-comp.data1.data2 <- perm(data1, data2)
-comp.data1.data3 <- perm(data1, data3)
-comp.data2.data4 <- perm(data2, data4)
-comp.data3.data4 <- perm(data3, data4)
-comp.data5.data6 <- perm(data5, data6)
+
+
+comp.data1.data2 <- perm(data1,data2)
+comp.data1.data3 <- perm(data1,data3)
+comp.data2.data4 <- perm(data2,data4)
+comp.data3.data4 <- perm(data3,data4)
+comp.data5.data6 <- perm(data5,data6)
+comp.data7.data8 <- perm(data7,data8)
 
 a <- comp.data1.data2 <= 0.05
 b <- comp.data1.data3 <= 0.05
 c <- comp.data2.data4 <= 0.05
 d <- comp.data3.data4 <= 0.05
 
-sig <- rowSums(cbind(a, b, c, d))
+sig <- rowSums(cbind(a,b,c,d))
 
 e <- as.data.frame(comp.data5.data6 <= 0.05)
 colnames(e) <- "sig"
+
+f <- comp.data7.data8 <= 0.05
 
 temp <- cbind(features, e)
 temp <- subset(temp, sig == TRUE) 
 temp <- subset(temp, select = -sig)
 
+plot(cbind(a, b, c, d))
+
 barplot(sig, ylab = "Number of Significant Match", xlab = "OTU Number",
         main = "Number of Significant Match between the Four Groups Depending on the OTU")
 
-corr.plot(temp) # Correlation heatmap of the new matrix
+#---- corr of the new matrix ----
 
-rownames(temp) # Obtain the OTU names
+corr.plot(temp)
+corr.plot(t(temp))
 
+#---- obtain the OTU ----
+rownames(temp)
+
+#---- OTU cor matrix ----
+png(filename = "Heatmap1.png", width = 13920, 
+    height = 13920, units = "px", pointsize = 12, res = 108) # Prepare png file for saving
+
+
+pheatmap(cormat, main = "Heatmap", cellheight = 9, fontsize_row = 6)
+
+dev.off()
+
+#--- obtain cor between the two matrix ----
+aaaa = cor(t(features))
+aaaa["c0c4c0d93a725778ecd357e51931e205", "57fdb23b739ab3c0cc9a8614d2c6db88"]
 
 # Random Forests Section - Garrie ---------------------------------------------
 library(randomForest)
