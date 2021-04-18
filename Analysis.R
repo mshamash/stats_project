@@ -335,7 +335,9 @@ library(knitr)
 library(pROC)
 library(kableExtra)
 
-# Random forest classifier for genotype
+###### ANALYSIS WITHOUT SUBSETTING BY AGE
+
+#Random forest based on genotype without subsetting by age 
 response.geno <- as.factor(sample_data(ps.filt)$Genotype)
 predictors <- t(otu_table(ps.filt))
 
@@ -362,27 +364,28 @@ ggplot(imp.20.geno, aes(x = predictors, y = MeanDecreaseGini)) +
   ggtitle("Most important OTUs for classifying samples\n based on Genotype") +
   xlab("OTU ID") +  
   theme(plot.title = element_text(hjust = 0.5), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
-  geom_text(x=10, y=0.4, label="56.67%")
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) 
+
 
 otunames.geno <- imp.20.geno$predictors
 r.geno <- rownames(tax_table(ps.filt)) %in% otunames.geno
-imp.otu.g <- tax_table(ps.filt)[r.geno, ] %>% 
+imp.otu.geno <- kable(tax_table(ps.filt)[r.geno, ])
+
+imp.otu.geno <- tax_table(ps.filt)[r.geno, ] %>% 
   kbl(caption = "") %>% 
   kable_styling()
 save_kable(
-  imp.otu.g,
+  imp.otu.geno,
   "kable.geno.png",
   bs_theme = "simplex",
   self_contained = TRUE,
   extra_dependencies = NULL,
   latex_header_includes = NULL,
   keep_tex = FALSE,
-  density = 300
-)
+  density = 300)
 dev.off()
 
-# Random forest classifier for age
+#Random forest based on age
 response.age <- as.factor(sample_data(ps.filt)$Age)
 predictors <- t(otu_table(ps.filt))
 
@@ -408,11 +411,12 @@ ggplot(imp.20.age, aes(x = predictors, y = MeanDecreaseGini)) +
   ggtitle("Most important OTUs for classifying samples\n based on Age") +
   xlab("OTU ID") +  
   theme(plot.title = element_text(hjust = 0.5), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
-  geom_text(x=10, y=0.4, label="23.33%")
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))
 
 otunames.age <- imp.20.age$predictors
 r.age <- rownames(tax_table(ps.filt)) %in% otunames.age
+imp.otu.age <- kable(tax_table(ps.filt)[r.age, ])
+
 imp.otu.age <- tax_table(ps.filt)[r.age, ] %>% 
   kbl(caption = "") %>% 
   kable_styling()
@@ -424,16 +428,11 @@ save_kable(
   extra_dependencies = NULL,
   latex_header_includes = NULL,
   keep_tex = FALSE,
-  density = 300
-)
+  density = 300)
 dev.off()
 
-# Generate ROC for RF classifiers of genotype and age, calculate AUC-ROC
-png("roc_curve.png", width = 1000,
-    height = 1000,
-    units = "px",
-    pointsize = 25, bg = "white", res = NA)
-par(mar = c(5.1, 5.1, 4.1, 3.1))
+#AUC-ROC of RF based on genotype (without subsetting based on age) and age 
+
 plot(roc.geno, col = "red", 
      xlab = "Specificity (False positive rate)",
      ylab = "Sensitivity (True positive rate)", 
@@ -443,4 +442,110 @@ legend("bottomright", legend = c("Genotype", "Age"),
        col = c("red", "blue"), pch = 1)
 text(0.3, 0.77, paste("AUC:", formatC(auc(roc.geno))), col = "red", cex = 1)
 text(0.3, 0.87, paste("AUC:", formatC(auc(roc.age))), col = "blue", cex = 1)
+
+
+###### ANALYSIS WITH SUBSETTING BY AGE
+
+#Random forest based on genotype in week 6 samples 
+response.g <- as.factor(sample_data(ps.filt.6wk)$Genotype)
+predictors.g <- t(otu_table(ps.filt.6wk))
+
+rf.data.g <- data.frame(response.g, predictors.g)
+set.seed(4)
+ps.classify.g <- randomForest(response.g ~ ., data = rf.data.g, ntree = 100)
+print(ps.classify.g)
+
+roc.g <- roc(rf.data.g$response.g, ps.classify.g$votes[, 2], levels = c("WT", "KO"))
+plot(roc.g)
+auc(roc.g)
+
+imp.g <- importance(ps.classify.g)
+imp.g <- data.frame(predictors = rownames(imp.g), imp.g)
+
+imp.sort.g <- arrange(imp.g, desc(MeanDecreaseGini))
+imp.sort.g$predictors <- factor(imp.sort.g$predictors, levels = imp.sort.g$predictors)
+imp.20.g <- imp.sort.g[1:20, ]
+
+ggplot(imp.20.g, aes(x = predictors, y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "red") +
+  coord_flip() +
+  ggtitle("Most important OTUs for classifying week 6 samples\n based on Genotype") +
+  xlab("OTU ID") +  
+  theme(plot.title = element_text(hjust = 0.5), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+otunames.g <- imp.20.g$predictors
+r.g <- rownames(tax_table(ps.filt.6wk)) %in% otunames.g
+imp.otu.g <- kable(tax_table(ps.filt.6wk)[r.g, ])
+
+imp.otu.g <- tax_table(ps.filt.6wk)[r.g, ] %>% 
+  kbl(caption = "") %>% 
+  kable_styling()
+save_kable(
+  imp.otu.g,
+  "kable.g.png",
+  bs_theme = "simplex",
+  self_contained = TRUE,
+  extra_dependencies = NULL,
+  latex_header_includes = NULL,
+  keep_tex = FALSE,
+  density = 300)
+dev.off()
+
+#Random forest based on genotype in week 12 samples 
+response.j <- as.factor(sample_data(ps.filt.12wk)$Genotype)
+predictors.j <- t(otu_table(ps.filt.12wk))
+
+rf.data.j <- data.frame(response.j, predictors.j)
+set.seed(2)
+ps.classify.j <- randomForest(response.j ~ ., data = rf.data.j, ntree = 100)
+print(ps.classify.j)
+
+roc.j <- roc(rf.data.j$response.j, ps.classify.j$votes[, 2], levels = c("WT", "KO"))
+plot(roc.j)
+auc(roc.j)
+
+imp.j <- importance(ps.classify.j)
+imp.j <- data.frame(predictors = rownames(imp.j), imp.j)
+
+imp.sort.j <- arrange(imp.j, desc(MeanDecreaseGini))
+imp.sort.j$predictors <- factor(imp.sort.j$predictors, levels = imp.sort.j$predictors)
+imp.20.j <- imp.sort.j[1:20, ]
+
+ggplot(imp.20.j, aes(x = predictors, y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  coord_flip() +
+  ggtitle("Most important OTUs for classifying week 12 samples\n based on Genotype") +
+  xlab("OTU ID") +  
+  theme(plot.title = element_text(hjust = 0.5), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+otunames.j <- imp.20.j$predictors
+r.j <- rownames(tax_table(ps.filt.12wk)) %in% otunames.j
+imp.otu.j <- kable(tax_table(ps.filt.12wk)[r.j, ])
+
+imp.otu.j <- tax_table(ps.filt.12wk)[r.j, ] %>% 
+  kbl(caption = "") %>% 
+  kable_styling()
+save_kable(
+  imp.otu.j,
+  "kable.j.png",
+  bs_theme = "simplex",
+  self_contained = TRUE,
+  extra_dependencies = NULL,
+  latex_header_includes = NULL,
+  keep_tex = FALSE,
+  density = 300)
+dev.off()
+
+#AUC-ROC of RF based on genotype (with subsetting based on age) and age 
+plot(roc.g, col = "red", 
+     xlab = "Specificity (False positive rate)",
+     ylab = "Sensitivity (True positive rate)", 
+     main = "ROC Curves of Random Forest Models Classifying Samples\n Based on Genotype")
+lines(roc.j, col = "blue")
+legend("bottomright", legend = c("Week 6", "Week 12"),
+       col = c("red", "blue"), pch = 1)
+text(0.25, 0.97, paste("AUC:", formatC(auc(roc.g))), col = "red", cex = 1)
+text(0.35, 0.57, paste("AUC:", formatC(auc(roc.j))), col = "blue", cex = 1)
 dev.off()
