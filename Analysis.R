@@ -38,6 +38,109 @@ ps.filt <- ps %>% subset_taxa(
   Genotype != "negative"
 )
 
+# Clean up OTU names
+taxa_names(ps.filt) <- paste("OTU", 1:664, sep="_")
+
+# Clean up taxonomy and replace blanks with previous known taxon
+tax.clean <- data.frame(tax_table(ps.filt))
+for (i in 1:7) tax.clean[, i] <- as.character(tax.clean[, i])
+tax.clean[is.na(tax.clean)] <- ""
+
+for (i in 1:nrow(tax.clean)) {
+  if (tax.clean[i, 2] == "") {
+    kingdom <- paste("Kingdom_", tax.clean[i,1], sep = "")
+    tax.clean[i, 2:7] <- kingdom
+  } else if (tax.clean[i, 3] == "") {
+    phylum <- paste("Phylum_", tax.clean[i,2], sep = "")
+    tax.clean[i, 3:7] <- phylum
+  } else if (tax.clean[i, 4] == "") {
+    class <- paste("Class_", tax.clean[i,3], sep = "")
+    tax.clean[i, 4:7] <- class
+  } else if (tax.clean[i, 5] == "") {
+    order <- paste("Order_", tax.clean[i,4], sep = "")
+    tax.clean[i, 5:7] <- order
+  } else if (tax.clean[i, 6] == "") {
+    family <- paste("Family_", tax.clean[i,5], sep = "")
+    tax.clean[i, 6:7] <- family
+  } else if (tax.clean[i, 7] == "") {
+    tax.clean$Species[i] <- paste("Genus", tax.clean$Genus[i], sep = "_")
+  }
+}
+
+tax_table(ps.filt) <- as.matrix(tax.clean)
+
+# Filter 6week and 12week samples
+ps.filt.6wk <- ps.filt %>% subset_samples(Age == "week6")
+ps.filt.12wk <- ps.filt %>% subset_samples(Age == "week12")
+
+# Differential abundance analysis
+library(DESeq2)
+library(ggpubr)
+
+# Calculate geometric means
+gm_mean = function(x, na.rm = TRUE){
+  exp(sum(log(x[x > 0]), na.rm = na.rm) / length(x))
+}
+alpha = 0.001
+
+dds.age <- phyloseq_to_deseq2(ps.filt, ~ Cage + Genotype + Age)
+dds.age$Age <- relevel(dds.age$Age, ref = "week6")
+geoMeans = apply(counts(dds.age), 1, gm_mean)
+dds.age = estimateSizeFactors(dds.age, geoMeans = geoMeans)
+dds.age = DESeq(dds.age, fitType="local")
+res.age = results(dds.age)
+res.age = res.wt.age[order(res.age$padj, na.last=NA), ]
+sigtab.age = res.wt.age[(res.age$padj < alpha), ]
+sigtab.age = cbind(as(sigtab.age, "data.frame"), as(tax_table(ps.filt)[rownames(sigtab.age), ], "matrix"))
+sigtab.age
+
+x = tapply(sigtab.age$log2FoldChange, sigtab.age$Genus, function(x) max(x))
+x = sort(x, TRUE)
+sigtab.age$Genus = factor(as.character(sigtab.age$Genus), levels=names(x))
+
+sigtab.age$OTU <- rownames(sigtab.age)
+ggbarplot(sigtab.age, x = "OTU", y = "log2FoldChange",
+          fill = "Genus",           # change fill color by mpg_level
+          color = "white",            # Set bar border colors to white
+          palette = "Set3",            # jco journal color palett. see ?ggpar
+          sort.val = "asc",          # Sort the value in ascending order
+          sort.by.groups = FALSE,     # Don't sort inside each group
+          ylab = "log2FoldChange",
+          legend.title = "Genus",
+          title = "Differentially abundant OTUs in 12-week-old mice compared to 6-week-old mice",
+          rotate = TRUE,
+          ggtheme = theme_classic()
+)
+
+dds.geno <- phyloseq_to_deseq2(ps.filt, ~ Cage + Age + Genotype)
+dds.geno$Genotype <- relevel(dds.geno$Genotype, ref = "WT")
+geoMeans = apply(counts(dds.geno), 1, gm_mean)
+dds.geno = estimateSizeFactors(dds.geno, geoMeans = geoMeans)
+dds.geno = DESeq(dds.geno, fitType="local")
+res = results(dds.geno)
+res = res[order(res$padj, na.last=NA), ]
+sigtab = res[(res$padj < alpha), ]
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(ps.filt)[rownames(sigtab), ], "matrix"))
+head(sigtab)
+
+x = tapply(sigtab$log2FoldChange, sigtab$Genus, function(x) max(x))
+x = sort(x, TRUE)
+sigtab$Genus = factor(as.character(sigtab$Genus), levels=names(x))
+
+sigtab$OTU <- rownames(sigtab)
+ggbarplot(sigtab, x = "OTU", y = "log2FoldChange",
+          fill = "Genus",           # change fill color by mpg_level
+          color = "white",            # Set bar border colors to white
+          palette = "Set3",            # jco journal color palett. see ?ggpar
+          sort.val = "asc",          # Sort the value in ascending order
+          sort.by.groups = FALSE,     # Don't sort inside each group
+          ylab = "log2FoldChange",
+          legend.title = "Genus",
+          title = "Differentially abundant OTUs in CD109-KO mice compared to WT mice",
+          rotate = TRUE,
+          ggtheme = theme_classic()
+)
+
 # Plot basic rarefaction curve
 rarecurve(t(otu_table(ps.filt)), step = 50, ylab = "Richness (# of OTUs)", xlab = "# of reads", label = F)
 
@@ -71,7 +174,7 @@ samp.div$Age <-  rep("", 30)
 for(i in 1:nrow(samp.div)){
   tmp <- sample_data(ps.filt)[match(rownames(samp.div)[i], rownames(sample_data(ps.filt))), ]
   samp.div[i, 3] <- tmp$Genotype
-   samp.div[i, 4] <- tmp$Age
+  samp.div[i, 4] <- tmp$Age
 }
 samp.div$Genotype <- factor(samp.div$Genotype, levels = c("WT", "KO"))
 samp.div$Age <- factor(samp.div$Age, levels = c("week6", "week12"))
@@ -90,8 +193,11 @@ t.test(subset(samp.div, Age == "week12" & Genotype == "WT")$Observed, subset(sam
 Hutcheson_t_test(subset(samp.div, Age == "week6" & Genotype == "WT")$Shannon, subset(samp.div, Age == "week6" & Genotype == "KO")$Shannon)
 Hutcheson_t_test(subset(samp.div, Age == "week12" & Genotype == "WT")$Shannon, subset(samp.div, Age == "week12" & Genotype == "KO")$Shannon)
 
-# Calculate weighted UniFrac distances between samples and plot on PCoA
+# Calculate Bray Curtis distances between samples and plot on PCoA
 ps.bdiv <- ordinate(ps.filt, "PCoA", "bray")
+ps.bdiv.6wk <- ordinate(ps.filt.6wk, "PCoA", "bray")
+ps.bdiv.12wk <- ordinate(ps.filt.12wk, "PCoA", "bray")
+
 plot_ordination(ps.filt, ps.bdiv, type = "samples", color = "Genotype", shape = "Age") +
   geom_point(size = 4) +
   scale_colour_brewer(palette = "Set1") +
@@ -99,12 +205,31 @@ plot_ordination(ps.filt, ps.bdiv, type = "samples", color = "Genotype", shape = 
   theme_bw() +
   ggtitle("PCoA on Bray Curtis distances of all samples")
 
+plot_ordination(ps.filt.6wk, ps.bdiv, type = "samples", color = "Genotype") +
+  geom_point(size = 4) +
+  scale_colour_brewer(palette = "Set1") +
+  stat_ellipse(geom = "polygon", type = "norm", alpha = 0.15, aes(fill = Genotype)) +
+  theme_bw() +
+  ggtitle("PCoA on Bray Curtis distances of 6 week samples")
+
+plot_ordination(ps.filt.12wk, ps.bdiv, type = "samples", color = "Genotype") +
+  geom_point(size = 4) +
+  scale_colour_brewer(palette = "Set1") +
+  stat_ellipse(geom = "polygon", type = "norm", alpha = 0.15, aes(fill = Genotype)) +
+  theme_bw() +
+  ggtitle("PCoA on Bray Curtis distances of 12 week samples")
+
 # Statistical testing (PERMANOVA) of beta diversity between groups
 set.seed(123456)
 adonis(distance(ps.filt, method = "bray") ~ Genotype, data = data.frame(sample_data(ps.filt)))
 adonis(distance(ps.filt, method = "bray") ~ Age, data = data.frame(sample_data(ps.filt)))
 adonis(distance(ps.filt, method = "bray") ~ Cage, data = data.frame(sample_data(ps.filt)))
 
+adonis(distance(ps.filt.6wk, method = "bray") ~ Genotype, data = data.frame(sample_data(ps.filt.6wk)))
+adonis(distance(ps.filt.6wk, method = "bray") ~ Cage, data = data.frame(sample_data(ps.filt.6wk)))
+
+adonis(distance(ps.filt.12wk, method = "bray") ~ Genotype, data = data.frame(sample_data(ps.filt.12wk)))
+adonis(distance(ps.filt.12wk, method = "bray") ~ Cage, data = data.frame(sample_data(ps.filt.12wk)))
 
 # Correlation & Permutation Test Section - Wen Da -----------------------------
 library(reshape2)
@@ -209,9 +334,6 @@ library(randomForest)
 library(knitr)
 library(pROC)
 library(kableExtra)
-
-taxa_names(ps.filt) <- paste("OTU", 1:664, sep="_")
-taxa_names(ps.filt)
 
 # Random forest classifier for genotype
 response.geno <- as.factor(sample_data(ps.filt)$Genotype)
